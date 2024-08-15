@@ -1,6 +1,7 @@
 import tiktoken
 from config import GPTConfig
 from model import GPT
+import time
 import torch
 from data import DataLoader
 
@@ -10,20 +11,20 @@ max_length = 30
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(device)
 
+torch.manual_seed(42)
+torch.cuda.manual_seed(42)
+torch.set_float32_matmul_precision('high')
+
 model = GPT(GPTConfig())
 model.eval()
 model.to(device)
-
-
-torch.manual_seed(42)
-torch.cuda.manual_seed(42)
 
 tokenizer = tiktoken.get_encoding('gpt2')
 
 
 def test_spongebob():
     tokens = torch.tensor(tokenizer.encode(
-        """[8/7/2024 3:10 PM] juju_beans
+        """spongebob squarepants
         """), dtype=torch.long)
     tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1)
     x = tokens.to(device)
@@ -44,20 +45,25 @@ def test_spongebob():
 
 test_spongebob()
 
+B, T = 4, 1024
 optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
-dl = DataLoader('discord_transcripts.txt')
+dl = DataLoader('merged_transcripts.txt', B, T)
 
 # train
-for i in range(50):
+for i in range(500):
+    t0 = time.time()
     optimizer.zero_grad()
-    values, targets = dl.get_next_batch(B=8, T=16)
+    values, targets = dl.get_next_batch()
     values = values.to(device)
     targets = targets.to(device)
-    logits, loss = model(values, targets)
+    with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+        logits, loss = model(values, targets)
     loss.backward()
     optimizer.step()
-    print(loss.item())
+    torch.cuda.synchronize()
+    tps = (B * T) / (time.time() - t0)
 
+    print(f"loss: {loss.item()} dt: {(time.time() - t0) * 1000}ms tps: {tps}")
 # save model
 torch.save(model.state_dict(), 'model.pth')
 

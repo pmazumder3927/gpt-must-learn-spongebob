@@ -3,19 +3,24 @@ import torch
 
 
 class DataLoader:
-    def __init__(self, file_path):
+    def __init__(self, file_path, B, T):
+        self.B = B
+        self.T = T
         self.file_path = file_path
         self.current_index = 0
         text = open(self.file_path, 'r', encoding='utf-8').read()
         self.tokenizer = tiktoken.get_encoding("gpt2")
         print("Loaded {} tokens".format(len(self.tokenizer.encode(text))))
+        print("Batches per full pass: {}".format(
+            len(self.tokenizer.encode(text)) // (self.B * self.T)))
         self.data = self.tokenizer.encode(text)
 
-    def get_next_batch(self, B, T):
+    def get_next_batch(self):
         buffer = torch.tensor(
-            self.data[self.current_index:self.current_index + B * T + 1])
-        labels, targets = buffer[:-1].view(B, T), buffer[1:].view(B, T)
-        self.current_index += B * T + 1
-        if self.current_index + B * T + 1 > len(self.data):
+            self.data[self.current_index:self.current_index + self.B * self.T + 1])
+        labels, targets = buffer[:-1].view(self.B,
+                                           self.T), buffer[1:].view(self.B, self.T)
+        self.current_index += self.B * self.T + 1
+        if self.current_index + self.B * self.T + 1 > len(self.data):
             self.current_index = 0
         return labels, targets
