@@ -19,13 +19,24 @@ model = GPT(GPTConfig())
 torch.compile(model)
 model.to(device)
 
+total_batch_size = 524288  # 2^19
 B, T = 4, 1024
+
+assert total_batch_size % (
+    B * T) == 0, "total_batch_size must be divisible by B * T"
+grad_accum_steps = total_batch_size // (B * T)
+print(f"Gradient Accumulation Steps: {grad_accum_steps}")
+
 dl = DataLoader('merged_transcripts.txt', B, T)
+
+max_steps = 10
+# around 100ms per step
+print(f"Max Steps: {max_steps}",
+      f"Estimated Time: {100 * max_steps * grad_accum_steps / 1000} seconds")
 
 max_lr = 6e-4
 min_lr = max_lr / 10
 warmup_steps = 10
-max_steps = 50
 optimizer = model.configure_optimizers(
     weight_decay=0.1, learning_rate=max_lr, device=device)
 
@@ -44,23 +55,27 @@ def get_lr(step):
 for step in range(1, max_steps + 1):
     t0 = time.time()
     optimizer.zero_grad()
-    values, targets = dl.get_next_batch()
-    values = values.to(device)
-    targets = targets.to(device)
-    lr = get_lr(step)
-    with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-        logits, loss = model(values, targets)
-    loss.backward()
+    loss_accum = 0
+    for mini_batch in range(grad_accum_steps):
+        values, targets = map(lambda x: x.to(device), dl.get_next_batch())
+        with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+            logits, loss = model(values, targets)
+        loss = loss / grad_accum_steps
+        loss_accum += loss.detach()
+        loss.backward()
     # clip gradients
     norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+    lr = get_lr(step)
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
     optimizer.step()
     torch.cuda.synchronize()
-    tps = (B * T) / (time.time() - t0)
+    tps = (B * T) * grad_accum_steps / (time.time() - t0)
 
-    print(f"""loss: {loss.item()} dt: {(time.time() - t0)
-          * 1000}ms tps: {tps} norm: {norm.item()} lr: {lr}""")
+    print(f"| Step | Loss      | Duration (ms) | TPS     | Grad Norm | Learning Rate |")
+    print(f"|------|-----------|----------------|---------|-----------|---------------|")
+    print(f"| {step:4d} | {loss_accum:9.4f} | {(time.time() - t0) *
+          1000:14.2f} | {tps:7.2f} | {norm.item():9.4f} | {lr:13.6f} |")
 
 # tokenizer = tiktoken.get_encoding('gpt2')
 
