@@ -65,14 +65,17 @@ class CausalSelfAttention(nn.Module):
         # calculation explanation:
         # q @ k.transpose(-2, -1) -> (B, nh, T, C // nh) @ (B, nh, C // nh, T) -> (B, nh, T, T)
         # then scale the attention score by 1 / sqrt(k.size(-1))
-        att = q @ k.transpose(-2, -1) * (1.0 / math.sqrt(k.size(-1)))
-        # mask attent to sequence inputs before the current attended token
-        att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
-        # softmax along the sequence length dimension so that the attention score sums to 1
-        att = F.softmax(att, dim=-1)
-        # (B, nh, T, T) @ (B, nh, T, C // nh) -> (B, nh, T, C // nh)
-        y = att @ v
+        # att = q @ k.transpose(-2, -1) * (1.0 / math.sqrt(k.size(-1)))
+        # # mask attent to sequence inputs before the current attended token
+        # att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
+        # # softmax along the sequence length dimension so that the attention score sums to 1
+        # att = F.softmax(att, dim=-1)
+        # # (B, nh, T, T) @ (B, nh, T, C // nh) -> (B, nh, T, C // nh)
+        # y = att @ v
         # now fix the dimensions to be (B, T, nh, C // nh) -> (B, T, C)
+
+        # flash attention: fused kernel for attention
+        y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
         y = y.transpose(1, 2).contiguous().view(B, T, C)
         y = self.c_proj(y)
         return y
