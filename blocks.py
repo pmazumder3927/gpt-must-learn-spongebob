@@ -38,6 +38,7 @@ class CausalSelfAttention(nn.Module):
         super().__init__()
         self.c_attn = nn.Linear(config.n_embd, 3*config.n_embd)
         self.c_proj = nn.Linear(config.n_embd, config.n_embd)
+        self.c_proj.GPT_SCALE_INIT = 1
         # bias mask for causal attention
         self.register_buffer("bias", torch.tril(torch.ones(
             config.block_size, config.block_size)).view(1, 1, config.block_size, config.block_size))

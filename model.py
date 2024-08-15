@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from config import GPTConfig
 from blocks import Block
+import math
 
 
 class GPT(nn.Module):
@@ -18,6 +19,8 @@ class GPT(nn.Module):
         self.lm_head = nn.Linear(n_embd, vocab_size, bias=False)
         # weight sharing
         self.transformer.wte.weight = self.lm_head.weight
+        # initialize weights
+        self.apply(self.__init_weights)
 
     def forward(self, idx, targets=None):
         # idx and targets are both (B, T) tensor of integers
@@ -37,8 +40,22 @@ class GPT(nn.Module):
         loss = None if targets is None else torch.nn.functional.cross_entropy(logits.view(-1, logits.size(-1)),
                                                                               targets.view(-1), ignore_index=-1)
         return logits, loss
-    # copypasta from https://github.com/karpathy/nanoGPT/blob/master/model.py
 
+    def __init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            std = 1/math.sqrt(self.config.n_embd)
+            if hasattr(module, 'GPT_SCALE_INIT'):
+                std = 1/math.sqrt(2 * self.config.n_layer)
+            else:
+                torch.nn.init.normal_(module.weight, mean=0.0,
+                                      std=std)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0,
+                                  std=1/math.sqrt(self.config.n_embd))
+
+    # copypasta from https://github.com/karpathy/nanoGPT/blob/master/model.py
     @ classmethod
     def from_pretrained(cls, model_type):
         """Loads pretrained GPT-2 model weights from huggingface"""
