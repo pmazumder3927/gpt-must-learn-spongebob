@@ -5,8 +5,6 @@ import time
 import torch
 from data import DataLoader
 import math
-num_return_sequences = 5
-max_length = 30
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(device)
@@ -29,7 +27,7 @@ print(f"Gradient Accumulation Steps: {grad_accum_steps}")
 
 dl = DataLoader('merged_transcripts.txt', B, T)
 
-max_steps = 10
+max_steps = 50
 # around 100ms per step
 print(f"Max Steps: {max_steps}",
       f"Estimated Time: {100 * max_steps * grad_accum_steps / 1000} seconds")
@@ -49,7 +47,6 @@ def get_lr(step):
         return min_lr
     # cosine decay
     return min_lr + (max_lr - min_lr) * 0.5 * (1 + math.cos(math.pi * step / max_steps))
-
 
     # train
 for step in range(1, max_steps + 1):
@@ -72,38 +69,36 @@ for step in range(1, max_steps + 1):
     torch.cuda.synchronize()
     tps = (B * T) * grad_accum_steps / (time.time() - t0)
 
-    print(f"| Step | Loss      | Duration (ms) | TPS     | Grad Norm | Learning Rate |")
+    print(f"| Step | Loss      | Duration (ms)  | TPS     | Grad Norm | Learning Rate |")
     print(f"|------|-----------|----------------|---------|-----------|---------------|")
     print(f"| {step:4d} | {loss_accum:9.4f} | {(time.time() - t0) *
-          1000:14.2f} | {tps:7.2f} | {norm.item():9.4f} | {lr:13.6f} |")
+          1000:14.2f} | {tps:7.0f} | {norm.item():9.4f} | {lr:13.6f} |")
+    print(f"|------|-----------|----------------|---------|-----------|---------------|")
 
 # tokenizer = tiktoken.get_encoding('gpt2')
 
 
-# def test_spongebob():
-#     tokens = torch.tensor(tokenizer.encode(
-#         """spongebob squarepants
-#         """), dtype=torch.long)
-#     tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1)
-#     x = tokens.to(device)
-#     while (x.size(1) < max_length):
-#         with torch.no_grad():
-#             logits, loss = model(x)
-#             logits = logits[:, -1, :]
-#             probs = torch.nn.functional.softmax(logits, dim=-1)
-#             topk_probs, topk_indices = torch.topk(
-#                 probs, 50, dim=-1)
-#             ix = torch.multinomial(topk_probs, 1)
-#             xcol = torch.gather(topk_indices, -1, ix)
-#             x = torch.cat((x, xcol), dim=1)
-#     for i in range(num_return_sequences):
-#         print(">", tokenizer.decode(x[i, :max_length].tolist()))
+def test_spongebob(num_return_sequences=5, max_length=30):
+    tokens = torch.tensor(tokenizer.encode(
+        """spongebob squarepants"""), dtype=torch.long)
+    tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1)
+    x = tokens.to(device)
+    while (x.size(1) < max_length):
+        with torch.no_grad():
+            logits, loss = model(x)
+            logits = logits[:, -1, :]
+            probs = torch.nn.functional.softmax(logits, dim=-1)
+            topk_probs, topk_indices = torch.topk(
+                probs, 50, dim=-1)
+            ix = torch.multinomial(topk_probs, 1)
+            xcol = torch.gather(topk_indices, -1, ix)
+            x = torch.cat((x, xcol), dim=1)
+    for i in range(num_return_sequences):
+        print(">", tokenizer.decode(x[i, :max_length].tolist()))
 
-
-# # test_spongebob()
 
 # save model
 torch.save(model.state_dict(), 'model.pth')
 
 # rerun test
-# test_spongebob()
+test_spongebob(5, 200)
