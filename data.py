@@ -16,6 +16,6 @@ class DataLoader:
             self.data[self.current_index:self.current_index + B * T + 1])
         labels, targets = buffer[:-1].view(B, T), buffer[1:].view(B, T)
         self.current_index += B * T + 1
-        if self.current_index >= len(self.data):
+        if self.current_index + B * T + 1 > len(self.data):
             self.current_index = 0
         return labels, targets

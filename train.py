@@ -23,7 +23,8 @@ tokenizer = tiktoken.get_encoding('gpt2')
 
 def test_spongebob():
     tokens = torch.tensor(tokenizer.encode(
-        "spongebob squarepants"), dtype=torch.long)
+        """[8/7/2024 3:10 PM] juju_beans
+        """), dtype=torch.long)
     tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1)
     x = tokens.to(device)
     while (x.size(1) < max_length):
@@ -44,13 +45,12 @@ def test_spongebob():
 test_spongebob()
 
 optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
-dl = DataLoader('merged_transcripts.txt')
-
+dl = DataLoader('discord_transcripts.txt')
 
 # train
-for i in range(3000):
+for i in range(50):
     optimizer.zero_grad()
-    values, targets = dl.get_next_batch(B=16, T=64)
+    values, targets = dl.get_next_batch(B=8, T=16)
     values = values.to(device)
     targets = targets.to(device)
     logits, loss = model(values, targets)

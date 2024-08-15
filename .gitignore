@@ -2,3 +2,5 @@
 /transcripts
 merged_transcripts.txt
 *.pth
+*.txt
+/__pycache__
