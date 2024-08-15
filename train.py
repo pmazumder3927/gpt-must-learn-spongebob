@@ -20,19 +20,19 @@ torch.compile(model)
 model.to(device)
 
 B, T = 4, 1024
-optimizer = torch.optim.AdamW(
-    model.parameters(), lr=3e-4, betas=(0.9, 0.95), eps=1e-8, weight_decay=0.1)
 dl = DataLoader('merged_transcripts.txt', B, T)
 
 max_lr = 6e-4
 min_lr = max_lr / 10
 warmup_steps = 10
 max_steps = 50
+optimizer = model.configure_optimizers(
+    weight_decay=0.1, learning_rate=max_lr, device=device)
 
 
 def get_lr(step):
     # warmup
-    if step < warmup_steps:
+    if step <= warmup_steps:
         return max_lr * step / warmup_steps
     if step > max_steps:
         return min_lr

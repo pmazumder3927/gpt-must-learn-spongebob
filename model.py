@@ -22,6 +22,22 @@ class GPT(nn.Module):
         # initialize weights
         self.apply(self.__init_weights)
 
+    def configure_optimizers(self, weight_decay, learning_rate, device):
+        param_dict = {k: v for k, v in self.named_parameters()
+                      if v.requires_grad}
+        to_decay = [v for k, v in param_dict.items() if v.ndim > 1]
+        to_not_decay = [v for k, v in param_dict.items() if v.ndim <= 1]
+        optim_groups = [
+            {"params": to_decay, "weight_decay": weight_decay},
+            {"params": to_not_decay, "weight_decay": 0.0}
+        ]
+        n_decay = sum([p.numel() for p in to_decay])
+        n_not_decay = sum([p.numel() for p in to_not_decay])
+        print(f"decay: {n_decay}, not_decay: {n_not_decay}")
+        optimizer = torch.optim.AdamW(
+            optim_groups, lr=learning_rate, betas=(0.9, 0.95), eps=1e-8, fused=True)
+        return optimizer
+
     def forward(self, idx, targets=None):
         # idx and targets are both (B, T) tensor of integers
         B, T = idx.size()
