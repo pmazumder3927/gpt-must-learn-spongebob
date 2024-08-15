@@ -20,7 +20,8 @@ torch.compile(model)
 model.to(device)
 
 B, T = 4, 1024
-optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
+optimizer = torch.optim.AdamW(
+    model.parameters(), lr=3e-4, betas=(0.9, 0.95), eps=1e-8, weight_decay=0.1)
 dl = DataLoader('merged_transcripts.txt', B, T)
 
 # train
@@ -33,11 +34,14 @@ for i in range(500):
     with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
         logits, loss = model(values, targets)
     loss.backward()
+    # clip gradients
+    norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
     optimizer.step()
     torch.cuda.synchronize()
     tps = (B * T) / (time.time() - t0)
 
-    print(f"loss: {loss.item()} dt: {(time.time() - t0) * 1000}ms tps: {tps}")
+    print(f"loss: {loss.item()} dt: {(time.time() - t0)
+          * 1000}ms tps: {tps} norm: {norm.item()}")
 
 # tokenizer = tiktoken.get_encoding('gpt2')
 
