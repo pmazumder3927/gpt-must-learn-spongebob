@@ -4,7 +4,7 @@ from model import GPT
 import time
 import torch
 from data import DataLoader
-
+import math
 num_return_sequences = 5
 max_length = 30
 
@@ -24,24 +24,43 @@ optimizer = torch.optim.AdamW(
     model.parameters(), lr=3e-4, betas=(0.9, 0.95), eps=1e-8, weight_decay=0.1)
 dl = DataLoader('merged_transcripts.txt', B, T)
 
-# train
-for i in range(500):
+max_lr = 6e-4
+min_lr = max_lr / 10
+warmup_steps = 10
+max_steps = 50
+
+
+def get_lr(step):
+    # warmup
+    if step < warmup_steps:
+        return max_lr * step / warmup_steps
+    if step > max_steps:
+        return min_lr
+    # cosine decay
+    return min_lr + (max_lr - min_lr) * 0.5 * (1 + math.cos(math.pi * step / max_steps))
+
+
+    # train
+for step in range(1, max_steps + 1):
     t0 = time.time()
     optimizer.zero_grad()
     values, targets = dl.get_next_batch()
     values = values.to(device)
     targets = targets.to(device)
+    lr = get_lr(step)
     with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
         logits, loss = model(values, targets)
     loss.backward()
     # clip gradients
     norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
     optimizer.step()
     torch.cuda.synchronize()
     tps = (B * T) / (time.time() - t0)
 
-    print(f"loss: {loss.item()} dt: {(time.time() - t0)
-          * 1000}ms tps: {tps} norm: {norm.item()}")
+    print(f"""loss: {loss.item()} dt: {(time.time() - t0)
+          * 1000}ms tps: {tps} norm: {norm.item()} lr: {lr}""")
 
 # tokenizer = tiktoken.get_encoding('gpt2')
 
