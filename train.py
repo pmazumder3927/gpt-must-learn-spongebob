@@ -16,34 +16,8 @@ torch.cuda.manual_seed(42)
 torch.set_float32_matmul_precision('high')
 
 model = GPT(GPTConfig())
-model.eval()
+torch.compile(model)
 model.to(device)
-
-tokenizer = tiktoken.get_encoding('gpt2')
-
-
-def test_spongebob():
-    tokens = torch.tensor(tokenizer.encode(
-        """spongebob squarepants
-        """), dtype=torch.long)
-    tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1)
-    x = tokens.to(device)
-    while (x.size(1) < max_length):
-        with torch.no_grad():
-            logits, loss = model(x)
-            logits = logits[:, -1, :]
-            probs = torch.nn.functional.softmax(logits, dim=-1)
-            topk_probs, topk_indices = torch.topk(
-                probs, 50, dim=-1)
-            ix = torch.multinomial(topk_probs, 1)
-            xcol = torch.gather(topk_indices, -1, ix)
-            x = torch.cat((x, xcol), dim=1)
-
-    for i in range(num_return_sequences):
-        print(">", tokenizer.decode(x[i, :max_length].tolist()))
-
-
-test_spongebob()
 
 B, T = 4, 1024
 optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
@@ -64,8 +38,34 @@ for i in range(500):
     tps = (B * T) / (time.time() - t0)
 
     print(f"loss: {loss.item()} dt: {(time.time() - t0) * 1000}ms tps: {tps}")
+
+# tokenizer = tiktoken.get_encoding('gpt2')
+
+
+# def test_spongebob():
+#     tokens = torch.tensor(tokenizer.encode(
+#         """spongebob squarepants
+#         """), dtype=torch.long)
+#     tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1)
+#     x = tokens.to(device)
+#     while (x.size(1) < max_length):
+#         with torch.no_grad():
+#             logits, loss = model(x)
+#             logits = logits[:, -1, :]
+#             probs = torch.nn.functional.softmax(logits, dim=-1)
+#             topk_probs, topk_indices = torch.topk(
+#                 probs, 50, dim=-1)
+#             ix = torch.multinomial(topk_probs, 1)
+#             xcol = torch.gather(topk_indices, -1, ix)
+#             x = torch.cat((x, xcol), dim=1)
+#     for i in range(num_return_sequences):
+#         print(">", tokenizer.decode(x[i, :max_length].tolist()))
+
+
+# # test_spongebob()
+
 # save model
 torch.save(model.state_dict(), 'model.pth')
 
 # rerun test
-test_spongebob()
+# test_spongebob()
