@@ -41,8 +41,7 @@ class GPT(nn.Module):
     def forward(self, idx, targets=None):
         # idx and targets are both (B, T) tensor of integers
         B, T = idx.size()
-        assert T <= self.config.block_size, f"Cannot forward sequence of length {
-            T}, block size is only {self.config.block_size}"
+        assert T <= self.config.block_size, f"Cannot forward sequence of length {T}, block size is only {self.config.block_size}"
         # token and position embeddings
         pos = torch.arange(0, T, dtype=torch.long, device=idx.device)
         tok_emb = self.transformer.wte(idx)
@@ -116,8 +115,7 @@ class GPT(nn.Module):
                       'mlp.c_fc.weight', 'mlp.c_proj.weight']
         # basically the openai checkpoints use a "Conv1D" module, but we only want to use a vanilla Linear
         # this means that we have to transpose these weights when we import them
-        assert len(sd_keys_hf) == len(sd_keys), f"mismatched keys: {
-            len(sd_keys_hf)} != {len(sd_keys)}"
+        assert len(sd_keys_hf) == len(sd_keys), f"mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}"
         for k in sd_keys_hf:
             if any(k.endswith(w) for w in transposed):
                 # special treatment for the Conv1D weights we need to transpose
