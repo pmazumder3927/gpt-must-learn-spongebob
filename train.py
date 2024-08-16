@@ -5,9 +5,33 @@ import time
 import torch
 from data import DataLoader
 import math
+from torch.distributed import init_process_group, destroy_process_group
+from torch.nn import DDP
+import os
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-print(device)
+# set up distributed training
+ddp = int(os.environ.get('RANK', -1)) != -1
+if ddp:
+    # nccl is not working on windows, use gloo when ssh'd on linux box
+
+    # use the following lines to test on windows
+    os.environ["USE_LIBUV"] = '0'
+    init_process_group(backend='gloo')
+    # use the following line to test on linux
+    # init_process_group(backend='nccl')
+    ddp_rank = int(os.environ.get('RANK'))
+    ddp_world_size = int(os.environ.get('WORLD_SIZE'))
+    ddp_local_rank = int(os.environ.get('LOCAL_RANK'))
+    device = f'cuda:{ddp_local_rank}' if torch.cuda.is_available() else 'cpu'
+    torch.cuda.set_device(device)
+    master_process = ddp_rank == 0  # first process does logging
+else:
+    master_process = True
+    ddp_world_size = 1
+    ddp_rank = 0
+    ddp_local_rank = 0
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    print(device)
 
 torch.manual_seed(42)
 torch.cuda.manual_seed(42)
@@ -18,23 +42,21 @@ torch.compile(model)
 model.to(device)
 
 total_batch_size = 524288  # 2^19
-B, T = 4, 1024
+B, T = 8, 1024
 
 assert total_batch_size % (
-    B * T) == 0, "total_batch_size must be divisible by B * T"
-grad_accum_steps = total_batch_size // (B * T)
-print(f"Gradient Accumulation Steps: {grad_accum_steps}")
+    B * T * ddp_world_size) == 0, "total_batch_size must be divisible by B * T * ddp_world_size"
+grad_accum_steps = total_batch_size // (B * T * ddp_world_size)
 
 dl = DataLoader('merged_transcripts.txt', B, T)
 
-max_steps = 50
-# around 100ms per step
-print(f"Max Steps: {max_steps}",
-      f"Estimated Time: {100 * max_steps * grad_accum_steps / 1000} seconds")
+max_steps = 1000
+if master_process:
+    print(f"Gradient Accumulation Steps: {grad_accum_steps}")
 
 max_lr = 6e-4
 min_lr = max_lr / 10
-warmup_steps = 10
+warmup_steps = 100
 optimizer = model.configure_optimizers(
     weight_decay=0.1, learning_rate=max_lr, device=device)
 
@@ -68,17 +90,22 @@ for step in range(1, max_steps + 1):
     optimizer.step()
     torch.cuda.synchronize()
     tps = (B * T) * grad_accum_steps / (time.time() - t0)
-
-    print(f"| Step | Loss      | Duration (ms)  | TPS     | Grad Norm | Learning Rate |")
-    print(f"|------|-----------|----------------|---------|-----------|---------------|")
-    print(f"| {step:4d} | {loss_accum:9.4f} | {(time.time() - t0) *
-          1000:14.2f} | {tps:7.0f} | {norm.item():9.4f} | {lr:13.6f} |")
-    print(f"|------|-----------|----------------|---------|-----------|---------------|")
-
-# tokenizer = tiktoken.get_encoding('gpt2')
+    dt_ms = (time.time() - t0) * 1000
+    if master_process:
+        print("Estimated time remaining (s): ",
+              (max_steps - step) * dt_ms / 1000)
+        print(
+            f"| Step | Loss      | Duration (ms)  | TPS     | Grad Norm | Learning Rate |")
+        print(
+            f"|------|-----------|----------------|---------|-----------|---------------|")
+        print(f"| {step:4d} | {loss_accum:9.4f} | {dt_ms:14.2f} | {
+              tps:7.0f} | {norm.item():9.4f} | {lr:13.6f} |")
+        print(
+            f"|------|-----------|----------------|---------|-----------|---------------|")
 
 
 def test_spongebob(num_return_sequences=5, max_length=30):
+    tokenizer = tiktoken.get_encoding('gpt2')
     tokens = torch.tensor(tokenizer.encode(
         """spongebob squarepants"""), dtype=torch.long)
     tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1)
