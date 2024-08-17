@@ -40,14 +40,15 @@ torch.set_float32_matmul_precision('high')
 
 model = GPT(GPTConfig())
 model.to(device)
-torch.compile(model)
+model = torch.compile(model)
 
 if ddp:
     model = DDP(model, device_ids=[ddp_local_rank])
     raw_model = model.module
-
+else:
+    raw_model = model
 total_batch_size = 524288  # 2^19
-B, T = 8, 1024
+B, T = 16, 1024
 
 assert total_batch_size % (
     B * T * ddp_world_size) == 0, "total_batch_size must be divisible by B * T * ddp_world_size"
@@ -83,14 +84,14 @@ for step in range(1, max_steps + 1):
     loss_accum = 0
     for mini_batch in range(grad_accum_steps):
         values, targets = map(lambda x: x.to(device), dl.get_next_batch())
-        with torch.autocast(device_type='cuda', dtype=torch.float16):
+        with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
             logits, loss = model(values, targets)
         loss = loss / grad_accum_steps
         loss_accum += loss.detach()
         # dont synchronization until last step
         # this is so ugly
         if ddp:
-            if (step % grad_accum_steps == 0):
+            if (mini_batch % grad_accum_steps == 0):
                 loss.backward()
             else:
                 with model.no_sync():
@@ -105,16 +106,17 @@ for step in range(1, max_steps + 1):
         param_group['lr'] = lr
     optimizer.step()
     torch.cuda.synchronize()
-    tps = (B * T) * grad_accum_steps / (time.time() - t0) * ddp_world_size
-    dt_ms = (time.time() - t0) * 1000
+    dt = (time.time() - t0)
+    tokens_processed = (B * T) * grad_accum_steps * ddp_world_size
+    tps = tokens_processed / dt
     if master_process:
         print("Estimated time remaining (s): ",
-              (max_steps - step) * dt_ms / 1000)
+              (max_steps - step) * dt)
         print(
             f"| Step | Loss      | Duration (ms)  | TPS     | Grad Norm | Learning Rate |")
         print(
             f"|------|-----------|----------------|---------|-----------|---------------|")
-        print(f"| {step:4d} | {loss_accum:9.4f} | {dt_ms:14.2f} | {tps:7.0f} | {norm.item():9.4f} | {lr:13.6f} |")
+        print(f"| {step:4d} | {loss_accum:9.4f} | {dt*1000:14.2f} | {tps:7.0f} | {norm.item():9.4f} | {lr:13.6f} |")
         print(
             f"|------|-----------|----------------|---------|-----------|---------------|")
 

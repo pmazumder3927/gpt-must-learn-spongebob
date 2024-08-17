@@ -58,9 +58,9 @@ class GPT(nn.Module):
 
     def __init_weights(self, module):
         if isinstance(module, nn.Linear):
-            std = 1/math.sqrt(self.config.n_embd)
+            std = 1/(self.config.n_embd ** 0.5)
             if hasattr(module, 'GPT_SCALE_INIT'):
-                std = 1/math.sqrt(2 * self.config.n_layer)
+                std = 1/((2 * self.config.n_layer) ** 0.5)
             else:
                 torch.nn.init.normal_(module.weight, mean=0.0,
                                       std=std)
@@ -68,7 +68,7 @@ class GPT(nn.Module):
                 torch.nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0,
-                                  std=1/math.sqrt(self.config.n_embd))
+                                  std=1/(self.config.n_embd ** 0.5))
 
     # copypasta from https://github.com/karpathy/nanoGPT/blob/master/model.py
     @ classmethod

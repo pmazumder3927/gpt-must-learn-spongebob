@@ -11,9 +11,9 @@ class DataLoader:
         self.current_index = self.B * self.T * num_workers
         text = open(self.file_path, 'r', encoding='utf-8').read()
         self.tokenizer = tiktoken.get_encoding("gpt2")
-        print("Loaded {} tokens".format(len(self.tokenizer.encode(text))))
-        print("Batches per full pass: {}".format(
-            len(self.tokenizer.encode(text)) // (self.B * self.T)))
+        # print("Loaded {} tokens".format(len(self.tokenizer.encode(text))))
+        # print("Batches per full pass: {}".format(
+            # len(self.tokenizer.encode(text)) // (self.B * self.T)))
         self.data = self.tokenizer.encode(text)
 
     def get_next_batch(self):
